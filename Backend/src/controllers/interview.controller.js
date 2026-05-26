@@ -37,19 +37,39 @@ async function generateInterViewReportController(req, res) {
         }
     }
 
-    const interViewReportByAi = await generateInterviewReport({
-        resume: resumeText,
-        selfDescription,
-        jobDescription
-    })
+    let interViewReportByAi
 
-    const interviewReport = await interviewReportModel.create({
-        user: req.user.id,
-        resume: resumeText,
-        selfDescription,
-        jobDescription,
-        ...interViewReportByAi
-    })
+    try {
+        interViewReportByAi = await generateInterviewReport({
+            resume: resumeText,
+            selfDescription,
+            jobDescription
+        })
+    } catch (err) {
+        console.error("AI interview report generation failed:", err)
+
+        return res.status(502).json({
+            message: "AI report generation failed. Check GOOGLE_GENAI_API_KEY and GEMINI_MODEL in Render."
+        })
+    }
+
+    let interviewReport
+
+    try {
+        interviewReport = await interviewReportModel.create({
+            user: req.user.id,
+            resume: resumeText,
+            selfDescription,
+            jobDescription,
+            ...interViewReportByAi
+        })
+    } catch (err) {
+        console.error("Saving interview report failed:", err)
+
+        return res.status(500).json({
+            message: "Interview report was generated but could not be saved. Check the generated report fields and MongoDB connection."
+        })
+    }
 
     res.status(201).json({
         message: "Interview report generated successfully.",

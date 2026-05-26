@@ -3,9 +3,17 @@ const { z } = require("zod")
 const { zodToJsonSchema } = require("zod-to-json-schema")
 const puppeteer = require("puppeteer")
 
-const ai = new GoogleGenAI({
-    apiKey: process.env.GOOGLE_GENAI_API_KEY
-})
+const GEMINI_MODEL = process.env.GEMINI_MODEL || "gemini-2.5-flash"
+
+function getAiClient() {
+    if (!process.env.GOOGLE_GENAI_API_KEY) {
+        throw new Error("GOOGLE_GENAI_API_KEY is not configured.")
+    }
+
+    return new GoogleGenAI({
+        apiKey: process.env.GOOGLE_GENAI_API_KEY
+    })
+}
 
 
 const interviewReportSchema = z.object({
@@ -34,6 +42,7 @@ const interviewReportSchema = z.object({
 
 async function generateInterviewReport({ resume, selfDescription, jobDescription }) {
 
+    const ai = getAiClient()
 
     const prompt = `Generate an interview report for a candidate with the following details:
                         Resume: ${resume}
@@ -42,7 +51,7 @@ async function generateInterviewReport({ resume, selfDescription, jobDescription
 `
 
     const response = await ai.models.generateContent({
-        model: "gemini-3-flash-preview",
+        model: GEMINI_MODEL,
         contents: prompt,
         config: {
             responseMimeType: "application/json",
@@ -78,6 +87,8 @@ async function generatePdfFromHtml(htmlContent) {
 
 async function generateResumePdf({ resume, selfDescription, jobDescription }) {
 
+    const ai = getAiClient()
+
     const resumePdfSchema = z.object({
         html: z.string().describe("The HTML content of the resume which can be converted to PDF using any library like puppeteer")
     })
@@ -96,7 +107,7 @@ async function generateResumePdf({ resume, selfDescription, jobDescription }) {
                     `
 
     const response = await ai.models.generateContent({
-        model: "gemini-3-flash-preview",
+        model: GEMINI_MODEL,
         contents: prompt,
         config: {
             responseMimeType: "application/json",
