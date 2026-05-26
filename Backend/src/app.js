@@ -5,15 +5,35 @@ const multer = require("multer")
 
 const app = express()
 
+const getAllowedOrigins = () => {
+    const clientUrls = process.env.CLIENT_URL || "http://localhost:5173"
+
+    return clientUrls
+        .split(",")
+        .map(url => url.trim())
+        .filter(Boolean)
+        .map(url => {
+            try {
+                return new URL(url).origin
+            } catch (err) {
+                return url
+            }
+        })
+}
+
 app.use(express.json())
 app.use(cookieParser())
-// app.use(cors({
-//     origin: "http://localhost:5173",
-//     credentials: true
-// }))
 
 app.use(cors({
-    origin: process.env.CLIENT_URL || "http://localhost:5173",
+    origin: (origin, callback) => {
+        const allowedOrigins = getAllowedOrigins()
+
+        if (!origin || allowedOrigins.includes(origin)) {
+            return callback(null, true)
+        }
+
+        callback(new Error("Not allowed by CORS"))
+    },
     credentials: true
 }))
 
