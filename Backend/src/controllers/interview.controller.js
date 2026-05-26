@@ -129,7 +129,17 @@ async function generateResumePdfController(req, res) {
 
     const { resume, jobDescription, selfDescription } = interviewReport
 
-    const pdfBuffer = await generateResumePdf({ resume, jobDescription, selfDescription })
+    let pdfBuffer
+
+    try {
+        pdfBuffer = await generateResumePdf({ resume, jobDescription, selfDescription })
+    } catch (err) {
+        console.error("Resume PDF generation failed:", err)
+
+        return res.status(502).json({
+            message: "Resume PDF generation failed. Check Render logs for the Gemini or Puppeteer error."
+        })
+    }
 
     res.set({
         "Content-Type": "application/pdf",
