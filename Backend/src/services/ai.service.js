@@ -4,6 +4,11 @@ const { zodToJsonSchema } = require("zod-to-json-schema")
 const puppeteer = require("puppeteer")
 
 const GEMINI_MODEL = process.env.GEMINI_MODEL || "gemini-2.5-flash"
+const GEMINI_FALLBACK_MODELS = (process.env.GEMINI_FALLBACK_MODELS || "gemini-2.5-flash-lite")
+    .split(",")
+    .map(model => model.trim())
+    .filter(Boolean)
+const RETRYABLE_AI_STATUSES = new Set([ 429, 500, 502, 503, 504 ])
 
 function getAiClient() {
     if (!process.env.GOOGLE_GENAI_API_KEY) {
@@ -13,6 +18,46 @@ function getAiClient() {
     return new GoogleGenAI({
         apiKey: process.env.GOOGLE_GENAI_API_KEY
     })
+}
+
+function wait(ms) {
+    return new Promise(resolve => setTimeout(resolve, ms))
+}
+
+function isRetryableAiError(error) {
+    return RETRYABLE_AI_STATUSES.has(error?.status) || RETRYABLE_AI_STATUSES.has(error?.code)
+}
+
+async function generateContentWithFallback({ contents, config }) {
+    const ai = getAiClient()
+    const models = [ GEMINI_MODEL, ...GEMINI_FALLBACK_MODELS ].filter((model, index, list) => list.indexOf(model) === index)
+    let lastError
+
+    for (const model of models) {
+        for (let attempt = 1; attempt <= 3; attempt++) {
+            try {
+                return await ai.models.generateContent({
+                    model,
+                    contents,
+                    config
+                })
+            } catch (error) {
+                lastError = error
+
+                if (!isRetryableAiError(error)) {
+                    throw error
+                }
+
+                console.warn(`Gemini model ${model} failed with status ${error.status || error.code}. Attempt ${attempt}/3.`)
+
+                if (attempt < 3) {
+                    await wait(750 * attempt)
+                }
+            }
+        }
+    }
+
+    throw lastError
 }
 
 
@@ -42,16 +87,13 @@ const interviewReportSchema = z.object({
 
 async function generateInterviewReport({ resume, selfDescription, jobDescription }) {
 
-    const ai = getAiClient()
-
     const prompt = `Generate an interview report for a candidate with the following details:
                         Resume: ${resume}
                         Self Description: ${selfDescription}
                         Job Description: ${jobDescription}
 `
 
-    const response = await ai.models.generateContent({
-        model: GEMINI_MODEL,
+    const response = await generateContentWithFallback({
         contents: prompt,
         config: {
             responseMimeType: "application/json",
@@ -94,8 +136,6 @@ async function generatePdfFromHtml(htmlContent) {
 
 async function generateResumePdf({ resume, selfDescription, jobDescription }) {
 
-    const ai = getAiClient()
-
     const resumePdfSchema = z.object({
         html: z.string().describe("The HTML content of the resume which can be converted to PDF using any library like puppeteer")
     })
@@ -113,8 +153,7 @@ async function generateResumePdf({ resume, selfDescription, jobDescription }) {
                         The resume should not be so lengthy, it should ideally be 1-2 pages long when converted to PDF. Focus on quality rather than quantity and make sure to include all the relevant information that can increase the candidate's chances of getting an interview call for the given job description.
                     `
 
-    const response = await ai.models.generateContent({
-        model: GEMINI_MODEL,
+    const response = await generateContentWithFallback({
         contents: prompt,
         config: {
             responseMimeType: "application/json",
